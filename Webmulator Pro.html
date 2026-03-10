@@ -16,9 +16,9 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background: #000;
-            color: #fff;
-            font-family: Arial, sans-serif;
+            background: #0f0f0f;
+            color: #f0f0f0;
+            font-family: Arial, Helvetica, sans-serif;
         }
 
         #app {
@@ -26,6 +26,7 @@
             inset: 0;
             width: 100vw;
             height: 100vh;
+            background: #000;
         }
 
         #game {
@@ -33,84 +34,461 @@
             height: 100%;
         }
 
-        #loader {
+        #launcher {
             position: absolute;
             inset: 0;
             display: flex;
             align-items: center;
             justify-content: center;
-            background: rgba(0, 0, 0, 0.92);
+            background: rgba(0, 0, 0, 0.9);
             z-index: 10;
+            padding: 24px;
         }
 
-        #loadButton {
-            border: 1px solid #fff;
-            background: transparent;
+        .panel {
+            width: min(640px, 100%);
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            box-shadow: 0 10px 35px rgba(0, 0, 0, 0.55);
+            overflow: hidden;
+        }
+
+        .panel-header {
+            background: #222;
+            border-bottom: 1px solid #333;
+            padding: 14px 16px;
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .panel-body {
+            padding: 16px;
+            display: grid;
+            gap: 12px;
+        }
+
+        .field {
+            display: grid;
+            gap: 6px;
+        }
+
+        label {
+            font-size: 13px;
+            color: #c9c9c9;
+        }
+
+        .row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .path {
+            flex: 1;
+            min-height: 38px;
+            border: 1px solid #3a3a3a;
+            background: #111;
+            color: #ddd;
+            border-radius: 4px;
+            padding: 9px 10px;
+            font-size: 14px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        button,
+        select {
+            min-height: 38px;
+            border: 1px solid #505050;
+            background: #2a2a2a;
             color: #fff;
-            padding: 12px 20px;
-            font-size: 16px;
+            border-radius: 4px;
+            font-size: 14px;
+            padding: 0 12px;
+        }
+
+        button {
             cursor: pointer;
+        }
+
+        button.primary {
+            background: #2f6fed;
+            border-color: #2f6fed;
+            font-weight: 700;
+        }
+
+        button:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
+        .actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 4px;
+        }
+
+        .hint {
+            font-size: 12px;
+            color: #9f9f9f;
         }
     </style>
 </head>
 <body>
     <main id="app">
         <div id="game"></div>
-        <div id="loader">
-            <button id="loadButton">Load ROM</button>
-            <input type="file" id="romInput" hidden>
-        </div>
+
+        <section id="launcher">
+            <div class="panel">
+                <div class="panel-header">Emulator Launcher</div>
+                <div class="panel-body">
+                    <div class="field">
+                        <label>ROM File</label>
+                        <div class="row">
+                            <div class="path" id="romPath">No file selected</div>
+                            <button id="browseButton" type="button">Browse</button>
+                            <input type="file" id="romInput" hidden>
+                        </div>
+                    </div>
+
+                    <div class="field">
+                        <label for="systemSelect">System</label>
+                        <select id="systemSelect"></select>
+                    </div>
+
+                    <div class="field">
+                        <label for="coreSelect">Core</label>
+                        <select id="coreSelect"></select>
+                        <div class="hint" id="coreHint">Default core selected.</div>
+                    </div>
+
+                    <div class="actions">
+                        <button id="startButton" class="primary" type="button" disabled>Start Game</button>
+                    </div>
+                </div>
+            </div>
+        </section>
     </main>
 
     <script>
         const romInput = document.getElementById('romInput');
-        const loadButton = document.getElementById('loadButton');
-        const loader = document.getElementById('loader');
+        const browseButton = document.getElementById('browseButton');
+        const startButton = document.getElementById('startButton');
+        const romPath = document.getElementById('romPath');
+        const launcher = document.getElementById('launcher');
+        const systemSelect = document.getElementById('systemSelect');
+        const coreSelect = document.getElementById('coreSelect');
+        const coreHint = document.getElementById('coreHint');
 
-        const coreByExtension = {
-            n64: 'n64',
-            z64: 'n64',
-            v64: 'n64',
+        const systems = {
+            nes: {
+                label: 'Nintendo Entertainment System',
+                defaultCore: 'fceumm',
+                cores: ['fceumm', 'nestopia']
+            },
+            snes: {
+                label: 'Super Nintendo Entertainment System',
+                defaultCore: 'snes9x',
+                cores: ['snes9x', 'bsnes']
+            },
+            gb: {
+                label: 'Game Boy / Game Boy Color',
+                defaultCore: 'gambatte',
+                cores: ['gambatte']
+            },
+            gba: {
+                label: 'Game Boy Advance',
+                defaultCore: 'mgba',
+                cores: ['mgba']
+            },
+            vb: {
+                label: 'Virtual Boy',
+                defaultCore: 'beetle_vb',
+                cores: ['beetle_vb']
+            },
+            nds: {
+                label: 'Nintendo DS',
+                defaultCore: 'melonds',
+                cores: ['melonds', 'desmume2015', 'desmume']
+            },
+            a5200: {
+                label: 'Atari 5200',
+                defaultCore: 'a5200',
+                cores: ['a5200']
+            },
+            mame2003: {
+                label: 'MAME 2003',
+                defaultCore: 'mame2003',
+                cores: ['mame2003', 'mame2003_plus']
+            },
+            arcade: {
+                label: 'Arcade',
+                defaultCore: 'fbneo',
+                cores: ['fbneo', 'fbalpha2012_cps1', 'fbalpha2012_cps2', 'same_cdi']
+            },
+            psx: {
+                label: 'PlayStation',
+                defaultCore: 'pcsx_rearmed',
+                cores: ['pcsx_rearmed', 'mednafen_psx_hw']
+            },
+            jaguar: {
+                label: 'Atari Jaguar',
+                defaultCore: 'virtualjaguar',
+                cores: ['virtualjaguar']
+            },
+            lynx: {
+                label: 'Atari Lynx',
+                defaultCore: 'handy',
+                cores: ['handy']
+            },
+            segaSaturn: {
+                label: 'Sega Saturn',
+                defaultCore: 'yabause',
+                cores: ['yabause']
+            },
+            segaMD: {
+                label: 'Sega Mega Drive / Genesis',
+                defaultCore: 'genesis_plus_gx',
+                cores: ['genesis_plus_gx', 'genesis_plus_gx_wide']
+            },
+            segaGG: {
+                label: 'Sega Game Gear',
+                defaultCore: 'genesis_plus_gx',
+                cores: ['genesis_plus_gx', 'genesis_plus_gx_wide']
+            },
+            segaCD: {
+                label: 'Sega CD',
+                defaultCore: 'genesis_plus_gx',
+                cores: ['genesis_plus_gx', 'genesis_plus_gx_wide']
+            },
+            n64: {
+                label: 'Nintendo 64',
+                defaultCore: 'mupen64plus_next',
+                cores: ['mupen64plus_next', 'parallel-n64']
+            },
+            threedo: {
+                label: '3DO',
+                defaultCore: 'opera',
+                cores: ['opera']
+            },
+            atari7800: {
+                label: 'Atari 7800',
+                defaultCore: 'prosystem',
+                cores: ['prosystem']
+            },
+            atari2600: {
+                label: 'Atari 2600',
+                defaultCore: 'stella2014',
+                cores: ['stella2014']
+            },
+            sega32x: {
+                label: 'Sega 32X',
+                defaultCore: 'picodrive',
+                cores: ['picodrive']
+            },
+            segaMS: {
+                label: 'Sega Master System',
+                defaultCore: 'smsplus',
+                cores: ['smsplus']
+            },
+            c64: {
+                label: 'Commodore 64',
+                defaultCore: 'vice_x64sc',
+                cores: ['vice_x64sc']
+            },
+            c128: {
+                label: 'Commodore 128',
+                defaultCore: 'vice_x128',
+                cores: ['vice_x128']
+            },
+            pet: {
+                label: 'Commodore PET',
+                defaultCore: 'vice_xpet',
+                cores: ['vice_xpet']
+            },
+            plus4: {
+                label: 'Commodore Plus/4',
+                defaultCore: 'vice_xplus4',
+                cores: ['vice_xplus4']
+            },
+            vic20: {
+                label: 'Commodore VIC-20',
+                defaultCore: 'vice_xvic',
+                cores: ['vice_xvic']
+            },
+            amiga: {
+                label: 'Amiga',
+                defaultCore: 'puae',
+                cores: ['puae']
+            },
+            coleco: {
+                label: 'ColecoVision',
+                defaultCore: 'gearcoleco',
+                cores: ['gearcoleco']
+            },
+            pce: {
+                label: 'PC Engine / TurboGrafx-16',
+                defaultCore: 'mednafen_pce',
+                cores: ['mednafen_pce']
+            },
+            pcfx: {
+                label: 'PC-FX',
+                defaultCore: 'mednafen_pcfx',
+                cores: ['mednafen_pcfx']
+            },
+            ngp: {
+                label: 'Neo Geo Pocket',
+                defaultCore: 'mednafen_ngp',
+                cores: ['mednafen_ngp']
+            },
+            ws: {
+                label: 'WonderSwan',
+                defaultCore: 'mednafen_wswan',
+                cores: ['mednafen_wswan']
+            },
+            dos: {
+                label: 'DOS',
+                defaultCore: 'dosbox_pure',
+                cores: ['dosbox_pure']
+            },
+            psp: {
+                label: 'PlayStation Portable',
+                defaultCore: 'ppsspp',
+                cores: ['ppsspp']
+            }
+        };
+
+        const extensionToSystem = {
+            nes: 'nes',
+            unif: 'nes',
+            unf: 'nes',
+            smc: 'snes',
+            sfc: 'snes',
             gb: 'gb',
             gbc: 'gb',
             gba: 'gba',
-            nds: 'nds',
-            nes: 'nes',
-            sfc: 'snes',
-            smc: 'snes',
-            snes: 'snes',
-            bin: 'segaMD',
-            gen: 'segaMD',
-            md: 'segaMD',
-            sms: 'segaMS',
-            gg: 'segaGG',
-            pce: 'pce',
             vb: 'vb',
-            lynx: 'lynx',
-            jag: 'jaguar',
-            a26: 'atari2600',
-            a78: 'atari7800',
+            nds: 'nds',
+            a52: 'a5200',
+            zip: 'arcade',
+            7z: 'arcade',
             cue: 'psx',
+            bin: 'psx',
+            chd: 'psx',
             iso: 'psx',
-            chd: 'psx'
+            jag: 'jaguar',
+            j64: 'jaguar',
+            lnx: 'lynx',
+            sat: 'segaSaturn',
+            md: 'segaMD',
+            gen: 'segaMD',
+            gg: 'segaGG',
+            cdi: 'segaCD',
+            n64: 'n64',
+            z64: 'n64',
+            v64: 'n64',
+            '3do': 'threedo',
+            a78: 'atari7800',
+            a26: 'atari2600',
+            '32x': 'sega32x',
+            sms: 'segaMS',
+            d64: 'c64',
+            crt: 'c64',
+            d81: 'c128',
+            pet: 'pet',
+            p4: 'plus4',
+            vic: 'vic20',
+            adf: 'amiga',
+            dsk: 'amiga',
+            col: 'coleco',
+            pce: 'pce',
+            ccd: 'pcfx',
+            ngp: 'ngp',
+            ngc: 'ngp',
+            ws: 'ws',
+            wsc: 'ws',
+            exe: 'dos',
+            com: 'dos',
+            bat: 'dos',
+            psp: 'psp',
+            cso: 'psp'
         };
 
-        loadButton.addEventListener('click', () => romInput.click());
+        let selectedFile = null;
+
+        function fillSystemOptions() {
+            const options = Object.entries(systems).map(([value, details]) =>
+                `<option value="${value}">${details.label}</option>`
+            );
+            systemSelect.innerHTML = options.join('');
+            systemSelect.value = 'gba';
+            fillCoreOptions('gba');
+        }
+
+        function fillCoreOptions(systemKey, preferredCore) {
+            const system = systems[systemKey];
+            const options = system.cores.map(core => {
+                const isDefault = core === system.defaultCore;
+                return `<option value="${core}">${core}${isDefault ? ' (default)' : ''}</option>`;
+            });
+            coreSelect.innerHTML = options.join('');
+            coreSelect.value = preferredCore && system.cores.includes(preferredCore)
+                ? preferredCore
+                : system.defaultCore;
+            updateCoreHint();
+        }
+
+        function updateCoreHint() {
+            const system = systems[systemSelect.value];
+            const selectedCore = coreSelect.value;
+            coreHint.textContent = selectedCore === system.defaultCore
+                ? `Default core for ${system.label}.`
+                : `Alternative core for ${system.label}.`;
+        }
+
+        systemSelect.addEventListener('change', () => {
+            fillCoreOptions(systemSelect.value);
+        });
+
+        coreSelect.addEventListener('change', updateCoreHint);
+
+        browseButton.addEventListener('click', () => romInput.click());
 
         romInput.addEventListener('change', () => {
-            const file = romInput.files[0];
-            if (!file) return;
+            selectedFile = romInput.files[0] || null;
+            startButton.disabled = !selectedFile;
 
-            const extension = file.name.split('.').pop().toLowerCase();
-            const core = coreByExtension[extension] || 'gba';
-            const url = URL.createObjectURL(file);
+            if (!selectedFile) {
+                romPath.textContent = 'No file selected';
+                return;
+            }
 
-            loader.style.display = 'none';
+            romPath.textContent = selectedFile.name;
+            const extension = selectedFile.name.includes('.')
+                ? selectedFile.name.split('.').pop().toLowerCase()
+                : '';
+            const suggestedSystem = extensionToSystem[extension];
+
+            if (suggestedSystem && systems[suggestedSystem]) {
+                systemSelect.value = suggestedSystem;
+                fillCoreOptions(suggestedSystem);
+            }
+        });
+
+        startButton.addEventListener('click', () => {
+            if (!selectedFile) return;
+
+            const selectedCore = coreSelect.value;
+            const url = URL.createObjectURL(selectedFile);
+            launcher.style.display = 'none';
 
             window.EJS_player = '#game';
-            window.EJS_gameName = file.name;
+            window.EJS_gameName = selectedFile.name;
             window.EJS_gameUrl = url;
-            window.EJS_core = core;
+            window.EJS_core = selectedCore;
             window.EJS_pathtodata = 'https://rawcdn.githack.com/EmulatorJS/EmulatorJS/main/data/';
             window.EJS_startOnLoaded = true;
 
@@ -118,6 +496,8 @@
             script.src = 'https://rawcdn.githack.com/EmulatorJS/EmulatorJS/main/data/loader.js';
             document.body.appendChild(script);
         });
+
+        fillSystemOptions();
     </script>
 </body>
 </html>
