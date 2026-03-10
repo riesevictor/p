@@ -1,503 +1,978 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Webmulator</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        html,
-        body {
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background: #0f0f0f;
-            color: #f0f0f0;
-            font-family: Arial, Helvetica, sans-serif;
-        }
-
-        #app {
-            position: fixed;
-            inset: 0;
-            width: 100vw;
-            height: 100vh;
-            background: #000;
-        }
-
-        #game {
-            width: 100%;
-            height: 100%;
-        }
-
-        #launcher {
-            position: absolute;
-            inset: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: rgba(0, 0, 0, 0.9);
-            z-index: 10;
-            padding: 24px;
-        }
-
-        .panel {
-            width: min(640px, 100%);
-            background: #1a1a1a;
-            border: 1px solid #333;
-            border-radius: 8px;
-            box-shadow: 0 10px 35px rgba(0, 0, 0, 0.55);
-            overflow: hidden;
-        }
-
-        .panel-header {
-            background: #222;
-            border-bottom: 1px solid #333;
-            padding: 14px 16px;
-            font-size: 18px;
-            font-weight: 700;
-        }
-
-        .panel-body {
-            padding: 16px;
-            display: grid;
-            gap: 12px;
-        }
-
-        .field {
-            display: grid;
-            gap: 6px;
-        }
-
-        label {
-            font-size: 13px;
-            color: #c9c9c9;
-        }
-
-        .row {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
-
-        .path {
-            flex: 1;
-            min-height: 38px;
-            border: 1px solid #3a3a3a;
-            background: #111;
-            color: #ddd;
-            border-radius: 4px;
-            padding: 9px 10px;
-            font-size: 14px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        button,
-        select {
-            min-height: 38px;
-            border: 1px solid #505050;
-            background: #2a2a2a;
-            color: #fff;
-            border-radius: 4px;
-            font-size: 14px;
-            padding: 0 12px;
-        }
-
-        button {
-            cursor: pointer;
-        }
-
-        button.primary {
-            background: #2f6fed;
-            border-color: #2f6fed;
-            font-weight: 700;
-        }
-
-        button:disabled {
-            opacity: 0.55;
-            cursor: not-allowed;
-        }
-
-        .actions {
-            display: flex;
-            justify-content: flex-end;
-            gap: 8px;
-            margin-top: 4px;
-        }
-
-        .hint {
-            font-size: 12px;
-            color: #9f9f9f;
-        }
-    </style>
-</head>
-<body>
-    <main id="app">
-        <div id="game"></div>
-
-        <section id="launcher">
-            <div class="panel">
-                <div class="panel-header">Emulator Launcher</div>
-                <div class="panel-body">
-                    <div class="field">
-                        <label>ROM File</label>
-                        <div class="row">
-                            <div class="path" id="romPath">No file selected</div>
-                            <button id="browseButton" type="button">Browse</button>
-                            <input type="file" id="romInput" hidden>
-                        </div>
-                    </div>
-
-                    <div class="field">
-                        <label for="systemSelect">System</label>
-                        <select id="systemSelect"></select>
-                    </div>
-
-                    <div class="field">
-                        <label for="coreSelect">Core</label>
-                        <select id="coreSelect"></select>
-                        <div class="hint" id="coreHint">Default core selected.</div>
-                    </div>
-
-                    <div class="actions">
-                        <button id="startButton" class="primary" type="button" disabled>Start Game</button>
-                    </div>
-                </div>
-            </div>
-        </section>
-    </main>
-
-    <script>
-        const romInput = document.getElementById('romInput');
-        const browseButton = document.getElementById('browseButton');
-        const startButton = document.getElementById('startButton');
-        const romPath = document.getElementById('romPath');
-        const launcher = document.getElementById('launcher');
-        const systemSelect = document.getElementById('systemSelect');
-        const coreSelect = document.getElementById('coreSelect');
-        const coreHint = document.getElementById('coreHint');
-
-        const systems = {
-            nes: {
-                label: 'Nintendo Entertainment System',
-                defaultCore: 'fceumm',
-                cores: ['fceumm', 'nestopia']
-            },
-            snes: {
-                label: 'Super Nintendo Entertainment System',
-                defaultCore: 'snes9x',
-                cores: ['snes9x', 'bsnes']
-            },
-            gb: {
-                label: 'Game Boy / Game Boy Color',
-                defaultCore: 'gambatte',
-                cores: ['gambatte']
-            },
-            gba: {
-                label: 'Game Boy Advance',
-                defaultCore: 'mgba',
-                cores: ['mgba']
-            },
-            vb: {
-                label: 'Virtual Boy',
-                defaultCore: 'beetle_vb',
-                cores: ['beetle_vb']
-            },
-            nds: {
-                label: 'Nintendo DS',
-                defaultCore: 'melonds',
-                cores: ['melonds', 'desmume2015', 'desmume']
-            },
-            a5200: {
-                label: 'Atari 5200',
-                defaultCore: 'a5200',
-                cores: ['a5200']
-            },
-            mame2003: {
-                label: 'MAME 2003',
-                defaultCore: 'mame2003',
-                cores: ['mame2003', 'mame2003_plus']
-            },
-            arcade: {
-                label: 'Arcade',
-                defaultCore: 'fbneo',
-                cores: ['fbneo', 'fbalpha2012_cps1', 'fbalpha2012_cps2', 'same_cdi']
-            },
-            psx: {
-                label: 'PlayStation',
-                defaultCore: 'pcsx_rearmed',
-                cores: ['pcsx_rearmed', 'mednafen_psx_hw']
-            },
-            jaguar: {
-                label: 'Atari Jaguar',
-                defaultCore: 'virtualjaguar',
-                cores: ['virtualjaguar']
-            },
-            lynx: {
-                label: 'Atari Lynx',
-                defaultCore: 'handy',
-                cores: ['handy']
-            },
-            segaSaturn: {
-                label: 'Sega Saturn',
-                defaultCore: 'yabause',
-                cores: ['yabause']
-            },
-            segaMD: {
-                label: 'Sega Mega Drive / Genesis',
-                defaultCore: 'genesis_plus_gx',
-                cores: ['genesis_plus_gx', 'genesis_plus_gx_wide']
-            },
-            segaGG: {
-                label: 'Sega Game Gear',
-                defaultCore: 'genesis_plus_gx',
-                cores: ['genesis_plus_gx', 'genesis_plus_gx_wide']
-            },
-            segaCD: {
-                label: 'Sega CD',
-                defaultCore: 'genesis_plus_gx',
-                cores: ['genesis_plus_gx', 'genesis_plus_gx_wide']
-            },
-            n64: {
-                label: 'Nintendo 64',
-                defaultCore: 'mupen64plus_next',
-                cores: ['mupen64plus_next', 'parallel-n64']
-            },
-            threedo: {
-                label: '3DO',
-                defaultCore: 'opera',
-                cores: ['opera']
-            },
-            atari7800: {
-                label: 'Atari 7800',
-                defaultCore: 'prosystem',
-                cores: ['prosystem']
-            },
-            atari2600: {
-                label: 'Atari 2600',
-                defaultCore: 'stella2014',
-                cores: ['stella2014']
-            },
-            sega32x: {
-                label: 'Sega 32X',
-                defaultCore: 'picodrive',
-                cores: ['picodrive']
-            },
-            segaMS: {
-                label: 'Sega Master System',
-                defaultCore: 'smsplus',
-                cores: ['smsplus']
-            },
-            c64: {
-                label: 'Commodore 64',
-                defaultCore: 'vice_x64sc',
-                cores: ['vice_x64sc']
-            },
-            c128: {
-                label: 'Commodore 128',
-                defaultCore: 'vice_x128',
-                cores: ['vice_x128']
-            },
-            pet: {
-                label: 'Commodore PET',
-                defaultCore: 'vice_xpet',
-                cores: ['vice_xpet']
-            },
-            plus4: {
-                label: 'Commodore Plus/4',
-                defaultCore: 'vice_xplus4',
-                cores: ['vice_xplus4']
-            },
-            vic20: {
-                label: 'Commodore VIC-20',
-                defaultCore: 'vice_xvic',
-                cores: ['vice_xvic']
-            },
-            amiga: {
-                label: 'Amiga',
-                defaultCore: 'puae',
-                cores: ['puae']
-            },
-            coleco: {
-                label: 'ColecoVision',
-                defaultCore: 'gearcoleco',
-                cores: ['gearcoleco']
-            },
-            pce: {
-                label: 'PC Engine / TurboGrafx-16',
-                defaultCore: 'mednafen_pce',
-                cores: ['mednafen_pce']
-            },
-            pcfx: {
-                label: 'PC-FX',
-                defaultCore: 'mednafen_pcfx',
-                cores: ['mednafen_pcfx']
-            },
-            ngp: {
-                label: 'Neo Geo Pocket',
-                defaultCore: 'mednafen_ngp',
-                cores: ['mednafen_ngp']
-            },
-            ws: {
-                label: 'WonderSwan',
-                defaultCore: 'mednafen_wswan',
-                cores: ['mednafen_wswan']
-            },
-            dos: {
-                label: 'DOS',
-                defaultCore: 'dosbox_pure',
-                cores: ['dosbox_pure']
-            },
-            psp: {
-                label: 'PlayStation Portable',
-                defaultCore: 'ppsspp',
-                cores: ['ppsspp']
-            }
-        };
-
-        const extensionToSystem = {
-            nes: 'nes',
-            unif: 'nes',
-            unf: 'nes',
-            smc: 'snes',
-            sfc: 'snes',
-            gb: 'gb',
-            gbc: 'gb',
-            gba: 'gba',
-            vb: 'vb',
-            nds: 'nds',
-            a52: 'a5200',
-            zip: 'arcade',
-            7z: 'arcade',
-            cue: 'psx',
-            bin: 'psx',
-            chd: 'psx',
-            iso: 'psx',
-            jag: 'jaguar',
-            j64: 'jaguar',
-            lnx: 'lynx',
-            sat: 'segaSaturn',
-            md: 'segaMD',
-            gen: 'segaMD',
-            gg: 'segaGG',
-            cdi: 'segaCD',
-            n64: 'n64',
-            z64: 'n64',
-            v64: 'n64',
-            '3do': 'threedo',
-            a78: 'atari7800',
-            a26: 'atari2600',
-            '32x': 'sega32x',
-            sms: 'segaMS',
-            d64: 'c64',
-            crt: 'c64',
-            d81: 'c128',
-            pet: 'pet',
-            p4: 'plus4',
-            vic: 'vic20',
-            adf: 'amiga',
-            dsk: 'amiga',
-            col: 'coleco',
-            pce: 'pce',
-            ccd: 'pcfx',
-            ngp: 'ngp',
-            ngc: 'ngp',
-            ws: 'ws',
-            wsc: 'ws',
-            exe: 'dos',
-            com: 'dos',
-            bat: 'dos',
-            psp: 'psp',
-            cso: 'psp'
-        };
-
-        let selectedFile = null;
-
-        function fillSystemOptions() {
-            const options = Object.entries(systems).map(([value, details]) =>
-                `<option value="${value}">${details.label}</option>`
-            );
-            systemSelect.innerHTML = options.join('');
-            systemSelect.value = 'gba';
-            fillCoreOptions('gba');
-        }
-
-        function fillCoreOptions(systemKey, preferredCore) {
-            const system = systems[systemKey];
-            const options = system.cores.map(core => {
-                const isDefault = core === system.defaultCore;
-                return `<option value="${core}">${core}${isDefault ? ' (default)' : ''}</option>`;
-            });
-            coreSelect.innerHTML = options.join('');
-            coreSelect.value = preferredCore && system.cores.includes(preferredCore)
-                ? preferredCore
-                : system.defaultCore;
-            updateCoreHint();
-        }
-
-        function updateCoreHint() {
-            const system = systems[systemSelect.value];
-            const selectedCore = coreSelect.value;
-            coreHint.textContent = selectedCore === system.defaultCore
-                ? `Default core for ${system.label}.`
-                : `Alternative core for ${system.label}.`;
-        }
-
-        systemSelect.addEventListener('change', () => {
-            fillCoreOptions(systemSelect.value);
-        });
-
-        coreSelect.addEventListener('change', updateCoreHint);
-
-        browseButton.addEventListener('click', () => romInput.click());
-
-        romInput.addEventListener('change', () => {
-            selectedFile = romInput.files[0] || null;
-            startButton.disabled = !selectedFile;
-
-            if (!selectedFile) {
-                romPath.textContent = 'No file selected';
-                return;
-            }
-
-            romPath.textContent = selectedFile.name;
-            const extension = selectedFile.name.includes('.')
-                ? selectedFile.name.split('.').pop().toLowerCase()
-                : '';
-            const suggestedSystem = extensionToSystem[extension];
-
-            if (suggestedSystem && systems[suggestedSystem]) {
-                systemSelect.value = suggestedSystem;
-                fillCoreOptions(suggestedSystem);
-            }
-        });
-
-        startButton.addEventListener('click', () => {
-            if (!selectedFile) return;
-
-            const selectedCore = coreSelect.value;
-            const url = URL.createObjectURL(selectedFile);
-            launcher.style.display = 'none';
-
-            window.EJS_player = '#game';
-            window.EJS_gameName = selectedFile.name;
-            window.EJS_gameUrl = url;
-            window.EJS_core = selectedCore;
-            window.EJS_pathtodata = 'https://rawcdn.githack.com/EmulatorJS/EmulatorJS/main/data/';
-            window.EJS_startOnLoaded = true;
-
-            const script = document.createElement('script');
-            script.src = 'https://rawcdn.githack.com/EmulatorJS/EmulatorJS/main/data/loader.js';
-            document.body.appendChild(script);
-        });
-
-        fillSystemOptions();
-    </script>
-</body>
-</html>
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/Webmulator Pro.html b/Webmulator Pro.html
+index 2107673389d19cb456f6b4dd8864c7678666ddfa..942d1fa884a1d2f8d5ca043a1e89c2ad1b5d2646 100644
+--- a/Webmulator Pro.html	
++++ b/Webmulator Pro.html	
+@@ -1,547 +1,503 @@
+ <!DOCTYPE html>
+ <html lang="en">
+ <head>
+     <meta charset="UTF-8">
+     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+-    <title>Webmulator Pro</title>
++    <title>Webmulator</title>
+     <style>
+         * {
+             margin: 0;
+             padding: 0;
+             box-sizing: border-box;
+         }
+ 
++        html,
+         body {
+-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+-            background: linear-gradient(135deg, #0a0a0a 0%, #1a0a2e 50%, #0a0a0a 100%);
+-            min-height: 100vh;
+-            color: #fff;
+-            overflow-x: hidden;
+-        }
+-
+-        .container {
+-            max-width: 1200px;
+-            margin: 0 auto;
+-            padding: 20px;
+-        }
+-
+-        .header {
+-            text-align: center;
+-            padding: 40px 20px;
+-            animation: fadeInDown 0.8s ease;
+-        }
+-
+-        .logo {
+-            font-size: 3em;
+-            font-weight: bold;
+-            background: linear-gradient(45deg, #00f5ff, #ff00ff, #00f5ff);
+-            background-size: 200% 200%;
+-            -webkit-background-clip: text;
+-            -webkit-text-fill-color: transparent;
+-            animation: gradient 3s ease infinite;
+-            text-shadow: 0 0 30px rgba(0, 245, 255, 0.5);
+-        }
+-
+-        .subtitle {
+-            color: #888;
+-            margin-top: 10px;
+-            font-size: 1.1em;
+-        }
+-
+-        .social-link {
+-            display: inline-block;
+-            margin-top: 15px;
+-            padding: 10px 25px;
+-            background: rgba(255, 255, 255, 0.05);
+-            border: 2px solid #00f5ff;
+-            border-radius: 25px;
+-            color: #00f5ff;
+-            text-decoration: none;
+-            transition: all 0.3s ease;
+-            box-shadow: 0 0 20px rgba(0, 245, 255, 0.3);
+-        }
+-
+-        .social-link:hover {
+-            background: rgba(0, 245, 255, 0.1);
+-            box-shadow: 0 0 30px rgba(0, 245, 255, 0.6);
+-            transform: translateY(-2px);
+-        }
+-
+-        .main-card {
+-            background: rgba(255, 255, 255, 0.03);
+-            backdrop-filter: blur(10px);
+-            border: 1px solid rgba(255, 255, 255, 0.1);
+-            border-radius: 20px;
+-            padding: 40px;
+-            margin: 20px 0;
+-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+-            animation: fadeInUp 0.8s ease;
+-        }
+-
+-        .upload-zone {
+-            border: 3px dashed rgba(0, 245, 255, 0.3);
+-            border-radius: 15px;
+-            padding: 60px 20px;
+-            text-align: center;
+-            transition: all 0.3s ease;
+-            cursor: pointer;
+-            position: relative;
++            width: 100%;
++            height: 100%;
+             overflow: hidden;
++            background: #0f0f0f;
++            color: #f0f0f0;
++            font-family: Arial, Helvetica, sans-serif;
+         }
+ 
+-        .upload-zone::before {
+-            content: '';
+-            position: absolute;
+-            top: -50%;
+-            left: -50%;
+-            width: 200%;
+-            height: 200%;
+-            background: radial-gradient(circle, rgba(0, 245, 255, 0.1) 0%, transparent 70%);
+-            animation: pulse 3s ease-in-out infinite;
+-        }
+-
+-        .upload-zone:hover {
+-            border-color: #00f5ff;
+-            background: rgba(0, 245, 255, 0.05);
+-            transform: scale(1.02);
+-        }
+-
+-        .upload-zone[drag="true"] {
+-            border-color: #ff00ff;
+-            background: rgba(255, 0, 255, 0.1);
+-        }
+-
+-        .upload-icon {
+-            font-size: 4em;
+-            margin-bottom: 20px;
+-            animation: float 3s ease-in-out infinite;
+-        }
+-
+-        button {
+-            background: linear-gradient(45deg, #00f5ff, #ff00ff);
+-            color: white;
+-            border: none;
+-            padding: 15px 40px;
+-            font-size: 1.1em;
+-            border-radius: 30px;
+-            cursor: pointer;
+-            transition: all 0.3s ease;
+-            box-shadow: 0 5px 20px rgba(0, 245, 255, 0.4);
+-            font-weight: 600;
+-            position: relative;
+-            z-index: 1;
+-        }
+-
+-        button:hover {
+-            transform: translateY(-3px);
+-            box-shadow: 0 8px 30px rgba(0, 245, 255, 0.6);
+-        }
+-
+-        button:active {
+-            transform: translateY(-1px);
+-        }
+-
+-        .console-selector {
+-            padding: 12px 20px;
+-            font-size: 1.1em;
+-            background: rgba(255, 255, 255, 0.05);
+-            border: 2px solid rgba(0, 245, 255, 0.5);
+-            border-radius: 10px;
+-            color: white;
+-            margin: 20px 10px;
+-            cursor: pointer;
+-            transition: all 0.3s ease;
+-        }
+-
+-        .console-selector:hover {
+-            border-color: #00f5ff;
+-            background: rgba(0, 245, 255, 0.1);
++        #app {
++            position: fixed;
++            inset: 0;
++            width: 100vw;
++            height: 100vh;
++            background: #000;
+         }
+ 
+         #game {
+             width: 100%;
+-            height: 600px;
+-            border-radius: 15px;
+-            overflow: hidden;
+-            box-shadow: 0 10px 40px rgba(0, 245, 255, 0.3);
+-            margin: 20px 0;
+-        }
+-
+-        .info-box {
+-            background: rgba(0, 245, 255, 0.05);
+-            border-left: 4px solid #00f5ff;
+-            border-radius: 10px;
+-            padding: 20px;
+-            margin: 20px 0;
+-            animation: fadeIn 1s ease;
+-        }
+-
+-        .info-box h3 {
+-            color: #00f5ff;
+-            margin-bottom: 10px;
+-        }
+-
+-        .info-box p {
+-            color: #ccc;
+-            line-height: 1.6;
++            height: 100%;
+         }
+ 
+-        .controls {
++        #launcher {
++            position: absolute;
++            inset: 0;
+             display: flex;
+-            gap: 15px;
++            align-items: center;
+             justify-content: center;
+-            flex-wrap: wrap;
+-            margin: 20px 0;
++            background: rgba(0, 0, 0, 0.9);
++            z-index: 10;
++            padding: 24px;
+         }
+ 
+-        .log-display {
+-            background: rgba(0, 0, 0, 0.5);
+-            border: 1px solid rgba(0, 245, 255, 0.3);
+-            border-radius: 10px;
+-            padding: 15px;
+-            max-height: 200px;
+-            overflow-y: auto;
+-            font-family: 'Courier New', monospace;
+-            font-size: 0.9em;
+-            color: #00f5ff;
+-            margin: 20px 0;
++        .panel {
++            width: min(640px, 100%);
++            background: #1a1a1a;
++            border: 1px solid #333;
++            border-radius: 8px;
++            box-shadow: 0 10px 35px rgba(0, 0, 0, 0.55);
++            overflow: hidden;
+         }
+ 
+-        .log-entry {
+-            padding: 5px;
+-            border-bottom: 1px solid rgba(0, 245, 255, 0.1);
++        .panel-header {
++            background: #222;
++            border-bottom: 1px solid #333;
++            padding: 14px 16px;
++            font-size: 18px;
++            font-weight: 700;
+         }
+ 
+-        .timestamp {
+-            color: #888;
+-            font-size: 0.85em;
++        .panel-body {
++            padding: 16px;
++            display: grid;
++            gap: 12px;
+         }
+ 
+-        @keyframes gradient {
+-            0% { background-position: 0% 50%; }
+-            50% { background-position: 100% 50%; }
+-            100% { background-position: 0% 50%; }
++        .field {
++            display: grid;
++            gap: 6px;
+         }
+ 
+-        @keyframes fadeInDown {
+-            from {
+-                opacity: 0;
+-                transform: translateY(-30px);
+-            }
+-            to {
+-                opacity: 1;
+-                transform: translateY(0);
+-            }
++        label {
++            font-size: 13px;
++            color: #c9c9c9;
+         }
+ 
+-        @keyframes fadeInUp {
+-            from {
+-                opacity: 0;
+-                transform: translateY(30px);
+-            }
+-            to {
+-                opacity: 1;
+-                transform: translateY(0);
+-            }
++        .row {
++            display: flex;
++            gap: 8px;
++            align-items: center;
++        }
++
++        .path {
++            flex: 1;
++            min-height: 38px;
++            border: 1px solid #3a3a3a;
++            background: #111;
++            color: #ddd;
++            border-radius: 4px;
++            padding: 9px 10px;
++            font-size: 14px;
++            overflow: hidden;
++            text-overflow: ellipsis;
++            white-space: nowrap;
+         }
+ 
+-        @keyframes fadeIn {
+-            from { opacity: 0; }
+-            to { opacity: 1; }
++        button,
++        select {
++            min-height: 38px;
++            border: 1px solid #505050;
++            background: #2a2a2a;
++            color: #fff;
++            border-radius: 4px;
++            font-size: 14px;
++            padding: 0 12px;
+         }
+ 
+-        @keyframes float {
+-            0%, 100% { transform: translateY(0); }
+-            50% { transform: translateY(-20px); }
++        button {
++            cursor: pointer;
+         }
+ 
+-        @keyframes pulse {
+-            0%, 100% { opacity: 0.3; }
+-            50% { opacity: 0.6; }
++        button.primary {
++            background: #2f6fed;
++            border-color: #2f6fed;
++            font-weight: 700;
+         }
+ 
+-        ::-webkit-scrollbar {
+-            width: 10px;
++        button:disabled {
++            opacity: 0.55;
++            cursor: not-allowed;
+         }
+ 
+-        ::-webkit-scrollbar-track {
+-            background: rgba(0, 0, 0, 0.3);
++        .actions {
++            display: flex;
++            justify-content: flex-end;
++            gap: 8px;
++            margin-top: 4px;
+         }
+ 
+-        ::-webkit-scrollbar-thumb {
+-            background: linear-gradient(45deg, #00f5ff, #ff00ff);
+-            border-radius: 5px;
++        .hint {
++            font-size: 12px;
++            color: #9f9f9f;
+         }
+     </style>
+ </head>
+ <body>
+-    <div class="container">
+-        <div class="header">
+-            <h1 class="logo">WEBMULATOR PRO</h1>
+-            <p class="subtitle">Modern Retro Gaming Emulator</p>
+-            <a href="https://instagram.com/12moneyy" target="_blank" class="social-link">
+-                📸 Follow @12moneyy on Instagram
+-            </a>
+-        </div>
+-
+-        <div class="main-card">
+-            <div id="welcomeSection">
+-                <div class="upload-zone" id="uploadZone">
+-                    <div class="upload-icon">🎮</div>
+-                    <h2>Drop ROM File Here</h2>
+-                    <p style="color: #888; margin: 15px 0;">or</p>
+-                    <input type="file" id="input" hidden>
+-                    <button id="uploadbutton">Browse Files</button>
+-                </div>
+-
+-                <div class="info-box">
+-                    <h3>What is Webmulator Pro?</h3>
+-                    <p>A modern, feature-rich retro gaming emulator supporting multiple console platforms. Upload your ROM files and start playing instantly. All gameplay sessions are tracked and can be exported for review.</p>
++    <main id="app">
++        <div id="game"></div>
++
++        <section id="launcher">
++            <div class="panel">
++                <div class="panel-header">Emulator Launcher</div>
++                <div class="panel-body">
++                    <div class="field">
++                        <label>ROM File</label>
++                        <div class="row">
++                            <div class="path" id="romPath">No file selected</div>
++                            <button id="browseButton" type="button">Browse</button>
++                            <input type="file" id="romInput" hidden>
++                        </div>
++                    </div>
++
++                    <div class="field">
++                        <label for="systemSelect">System</label>
++                        <select id="systemSelect"></select>
++                    </div>
++
++                    <div class="field">
++                        <label for="coreSelect">Core</label>
++                        <select id="coreSelect"></select>
++                        <div class="hint" id="coreHint">Default core selected.</div>
++                    </div>
++
++                    <div class="actions">
++                        <button id="startButton" class="primary" type="button" disabled>Start Game</button>
++                    </div>
+                 </div>
+             </div>
++        </section>
++    </main>
+ 
+-            <div id="gameSection" style="display: none;">
+-                <div id="game"></div>
+-                
+-                <div class="controls">
+-                    <button id="downloadLog">📥 Download Activity Log</button>
+-                    <button id="newGame">🔄 Load New ROM</button>
+-                </div>
++    <script>
++        const romInput = document.getElementById('romInput');
++        const browseButton = document.getElementById('browseButton');
++        const startButton = document.getElementById('startButton');
++        const romPath = document.getElementById('romPath');
++        const launcher = document.getElementById('launcher');
++        const systemSelect = document.getElementById('systemSelect');
++        const coreSelect = document.getElementById('coreSelect');
++        const coreHint = document.getElementById('coreHint');
++
++        const systems = {
++            nes: {
++                label: 'Nintendo Entertainment System',
++                defaultCore: 'fceumm',
++                cores: ['fceumm', 'nestopia']
++            },
++            snes: {
++                label: 'Super Nintendo Entertainment System',
++                defaultCore: 'snes9x',
++                cores: ['snes9x', 'bsnes']
++            },
++            gb: {
++                label: 'Game Boy / Game Boy Color',
++                defaultCore: 'gambatte',
++                cores: ['gambatte']
++            },
++            gba: {
++                label: 'Game Boy Advance',
++                defaultCore: 'mgba',
++                cores: ['mgba']
++            },
++            vb: {
++                label: 'Virtual Boy',
++                defaultCore: 'beetle_vb',
++                cores: ['beetle_vb']
++            },
++            nds: {
++                label: 'Nintendo DS',
++                defaultCore: 'melonds',
++                cores: ['melonds', 'desmume2015', 'desmume']
++            },
++            a5200: {
++                label: 'Atari 5200',
++                defaultCore: 'a5200',
++                cores: ['a5200']
++            },
++            mame2003: {
++                label: 'MAME 2003',
++                defaultCore: 'mame2003',
++                cores: ['mame2003', 'mame2003_plus']
++            },
++            arcade: {
++                label: 'Arcade',
++                defaultCore: 'fbneo',
++                cores: ['fbneo', 'fbalpha2012_cps1', 'fbalpha2012_cps2', 'same_cdi']
++            },
++            psx: {
++                label: 'PlayStation',
++                defaultCore: 'pcsx_rearmed',
++                cores: ['pcsx_rearmed', 'mednafen_psx_hw']
++            },
++            jaguar: {
++                label: 'Atari Jaguar',
++                defaultCore: 'virtualjaguar',
++                cores: ['virtualjaguar']
++            },
++            lynx: {
++                label: 'Atari Lynx',
++                defaultCore: 'handy',
++                cores: ['handy']
++            },
++            segaSaturn: {
++                label: 'Sega Saturn',
++                defaultCore: 'yabause',
++                cores: ['yabause']
++            },
++            segaMD: {
++                label: 'Sega Mega Drive / Genesis',
++                defaultCore: 'genesis_plus_gx',
++                cores: ['genesis_plus_gx', 'genesis_plus_gx_wide']
++            },
++            segaGG: {
++                label: 'Sega Game Gear',
++                defaultCore: 'genesis_plus_gx',
++                cores: ['genesis_plus_gx', 'genesis_plus_gx_wide']
++            },
++            segaCD: {
++                label: 'Sega CD',
++                defaultCore: 'genesis_plus_gx',
++                cores: ['genesis_plus_gx', 'genesis_plus_gx_wide']
++            },
++            n64: {
++                label: 'Nintendo 64',
++                defaultCore: 'mupen64plus_next',
++                cores: ['mupen64plus_next', 'parallel-n64']
++            },
++            threedo: {
++                label: '3DO',
++                defaultCore: 'opera',
++                cores: ['opera']
++            },
++            atari7800: {
++                label: 'Atari 7800',
++                defaultCore: 'prosystem',
++                cores: ['prosystem']
++            },
++            atari2600: {
++                label: 'Atari 2600',
++                defaultCore: 'stella2014',
++                cores: ['stella2014']
++            },
++            sega32x: {
++                label: 'Sega 32X',
++                defaultCore: 'picodrive',
++                cores: ['picodrive']
++            },
++            segaMS: {
++                label: 'Sega Master System',
++                defaultCore: 'smsplus',
++                cores: ['smsplus']
++            },
++            c64: {
++                label: 'Commodore 64',
++                defaultCore: 'vice_x64sc',
++                cores: ['vice_x64sc']
++            },
++            c128: {
++                label: 'Commodore 128',
++                defaultCore: 'vice_x128',
++                cores: ['vice_x128']
++            },
++            pet: {
++                label: 'Commodore PET',
++                defaultCore: 'vice_xpet',
++                cores: ['vice_xpet']
++            },
++            plus4: {
++                label: 'Commodore Plus/4',
++                defaultCore: 'vice_xplus4',
++                cores: ['vice_xplus4']
++            },
++            vic20: {
++                label: 'Commodore VIC-20',
++                defaultCore: 'vice_xvic',
++                cores: ['vice_xvic']
++            },
++            amiga: {
++                label: 'Amiga',
++                defaultCore: 'puae',
++                cores: ['puae']
++            },
++            coleco: {
++                label: 'ColecoVision',
++                defaultCore: 'gearcoleco',
++                cores: ['gearcoleco']
++            },
++            pce: {
++                label: 'PC Engine / TurboGrafx-16',
++                defaultCore: 'mednafen_pce',
++                cores: ['mednafen_pce']
++            },
++            pcfx: {
++                label: 'PC-FX',
++                defaultCore: 'mednafen_pcfx',
++                cores: ['mednafen_pcfx']
++            },
++            ngp: {
++                label: 'Neo Geo Pocket',
++                defaultCore: 'mednafen_ngp',
++                cores: ['mednafen_ngp']
++            },
++            ws: {
++                label: 'WonderSwan',
++                defaultCore: 'mednafen_wswan',
++                cores: ['mednafen_wswan']
++            },
++            dos: {
++                label: 'DOS',
++                defaultCore: 'dosbox_pure',
++                cores: ['dosbox_pure']
++            },
++            psp: {
++                label: 'PlayStation Portable',
++                defaultCore: 'ppsspp',
++                cores: ['ppsspp']
++            }
++        };
+ 
+-                <div class="info-box">
+-                    <h3 id="gameTitle">Game Information</h3>
+-                    <p id="gameInfo">Your gaming session is being tracked. All interactions are logged and can be downloaded.</p>
+-                </div>
++        const extensionToSystem = {
++            nes: 'nes',
++            unif: 'nes',
++            unf: 'nes',
++            smc: 'snes',
++            sfc: 'snes',
++            gb: 'gb',
++            gbc: 'gb',
++            gba: 'gba',
++            vb: 'vb',
++            nds: 'nds',
++            a52: 'a5200',
++            zip: 'arcade',
++            7z: 'arcade',
++            cue: 'psx',
++            bin: 'psx',
++            chd: 'psx',
++            iso: 'psx',
++            jag: 'jaguar',
++            j64: 'jaguar',
++            lnx: 'lynx',
++            sat: 'segaSaturn',
++            md: 'segaMD',
++            gen: 'segaMD',
++            gg: 'segaGG',
++            cdi: 'segaCD',
++            n64: 'n64',
++            z64: 'n64',
++            v64: 'n64',
++            '3do': 'threedo',
++            a78: 'atari7800',
++            a26: 'atari2600',
++            '32x': 'sega32x',
++            sms: 'segaMS',
++            d64: 'c64',
++            crt: 'c64',
++            d81: 'c128',
++            pet: 'pet',
++            p4: 'plus4',
++            vic: 'vic20',
++            adf: 'amiga',
++            dsk: 'amiga',
++            col: 'coleco',
++            pce: 'pce',
++            ccd: 'pcfx',
++            ngp: 'ngp',
++            ngc: 'ngp',
++            ws: 'ws',
++            wsc: 'ws',
++            exe: 'dos',
++            com: 'dos',
++            bat: 'dos',
++            psp: 'psp',
++            cso: 'psp'
++        };
+ 
+-                <details style="margin-top: 20px;">
+-                    <summary style="cursor: pointer; color: #00f5ff; font-weight: bold; padding: 10px;">View Activity Log</summary>
+-                    <div class="log-display" id="logDisplay"></div>
+-                </details>
+-            </div>
+-        </div>
+-    </div>
++        let selectedFile = null;
+ 
+-    <script>
+-        // Activity Logger
+-        const activityLog = [];
+-        
+-        function logActivity(action, details = {}) {
+-            const entry = {
+-                timestamp: new Date().toISOString(),
+-                action: action,
+-                details: details,
+-                userAgent: navigator.userAgent,
+-                screenResolution: `${window.innerWidth}x${window.innerHeight}`
+-            };
+-            activityLog.push(entry);
+-            updateLogDisplay();
++        function fillSystemOptions() {
++            const options = Object.entries(systems).map(([value, details]) =>
++                `<option value="${value}">${details.label}</option>`
++            );
++            systemSelect.innerHTML = options.join('');
++            systemSelect.value = 'gba';
++            fillCoreOptions('gba');
+         }
+ 
+-        function updateLogDisplay() {
+-            const logDisplay = document.getElementById('logDisplay');
+-            if (logDisplay && activityLog.length > 0) {
+-                const lastEntries = activityLog.slice(-20).reverse();
+-                logDisplay.innerHTML = lastEntries.map(entry => 
+-                    `<div class="log-entry">
+-                        <span class="timestamp">[${new Date(entry.timestamp).toLocaleTimeString()}]</span> 
+-                        ${entry.action}
+-                    </div>`
+-                ).join('');
+-            }
++        function fillCoreOptions(systemKey, preferredCore) {
++            const system = systems[systemKey];
++            const options = system.cores.map(core => {
++                const isDefault = core === system.defaultCore;
++                return `<option value="${core}">${core}${isDefault ? ' (default)' : ''}</option>`;
++            });
++            coreSelect.innerHTML = options.join('');
++            coreSelect.value = preferredCore && system.cores.includes(preferredCore)
++                ? preferredCore
++                : system.defaultCore;
++            updateCoreHint();
+         }
+ 
+-        // Initialize
+-        logActivity('Page loaded');
+-
+-        // File upload handling
+-        const input = document.getElementById('input');
+-        const uploadButton = document.getElementById('uploadbutton');
+-        const uploadZone = document.getElementById('uploadZone');
++        function updateCoreHint() {
++            const system = systems[systemSelect.value];
++            const selectedCore = coreSelect.value;
++            coreHint.textContent = selectedCore === system.defaultCore
++                ? `Default core for ${system.label}.`
++                : `Alternative core for ${system.label}.`;
++        }
+ 
+-        uploadButton.addEventListener('click', () => {
+-            input.click();
+-            logActivity('Upload button clicked');
++        systemSelect.addEventListener('change', () => {
++            fillCoreOptions(systemSelect.value);
+         });
+ 
+-        uploadZone.addEventListener('click', (e) => {
+-            if (e.target === uploadZone || e.target.classList.contains('upload-icon') || e.target.tagName === 'H2') {
+-                input.click();
+-                logActivity('Upload zone clicked');
+-            }
+-        });
++        coreSelect.addEventListener('change', updateCoreHint);
+ 
+-        // Drag and drop
+-        uploadZone.addEventListener('dragover', (e) => {
+-            e.preventDefault();
+-            uploadZone.setAttribute('drag', 'true');
+-            logActivity('File dragged over upload zone');
+-        });
++        browseButton.addEventListener('click', () => romInput.click());
+ 
+-        uploadZone.addEventListener('dragleave', () => {
+-            uploadZone.removeAttribute('drag');
+-        });
++        romInput.addEventListener('change', () => {
++            selectedFile = romInput.files[0] || null;
++            startButton.disabled = !selectedFile;
+ 
+-        uploadZone.addEventListener('drop', (e) => {
+-            e.preventDefault();
+-            uploadZone.removeAttribute('drag');
+-            if (e.dataTransfer.files.length) {
+-                input.files = e.dataTransfer.files;
+-                input.dispatchEvent(new Event('change'));
+-                logActivity('File dropped', { fileName: e.dataTransfer.files[0].name });
++            if (!selectedFile) {
++                romPath.textContent = 'No file selected';
++                return;
+             }
+-        });
+-
+-        // ROM loading
+-        input.onchange = async () => {
+-            const file = input.files[0];
+-            const url = URL.createObjectURL(new Blob([file]));
+-            const parts = file.name.split(".");
+-            const fileName = parts[0];
+-            const ext = parts.pop().toLowerCase();
+-
+-            logActivity('ROM file selected', { fileName: file.name, fileSize: file.size });
+-
+-            const core = await (async (ext) => {
+-                if (["fds", "nes", "unif", "unf"].includes(ext)) return "nes";
+-                if (["smc", "fig", "sfc", "gd3", "gd7", "dx2", "bsx", "swc"].includes(ext)) return "snes";
+-                if (["z64", "n64"].includes(ext)) return "n64";
+-                if (["nds", "gba", "gb"].includes(ext)) return ext;
+-
+-                return await new Promise(resolve => {
+-                    const cores = {
+-                        "Nintendo 64": "n64",
+-                        "Nintendo Game Boy": "gb",
+-                        "Nintendo Game Boy Advance": "gba",
+-                        "Nintendo DS": "nds",
+-                        "Nintendo Entertainment System": "nes",
+-                        "Super Nintendo Entertainment System": "snes",
+-                        "PlayStation": "psx",
+-                        "Virtual Boy": "vb",
+-                        "Sega Mega Drive": "segaMD",
+-                        "Sega Master System": "segaMS",
+-                        "Sega CD": "segaCD",
+-                        "Atari Lynx": "lynx",
+-                        "Sega 32X": "sega32x",
+-                        "Atari Jaguar": "jaguar",
+-                        "Sega Game Gear": "segaGG",
+-                        "Sega Saturn": "segaSaturn",
+-                        "Atari 7800": "atari7800",
+-                        "Atari 2600": "atari2600"
+-                    };
+-
+-                    const modal = document.createElement('div');
+-                    modal.innerHTML = `
+-                        <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+-                                    background: rgba(10, 10, 10, 0.95); padding: 40px; border-radius: 20px; 
+-                                    border: 2px solid #00f5ff; z-index: 1000; text-align: center;">
+-                            <h2 style="color: #00f5ff; margin-bottom: 20px;">Select Console</h2>
+-                            <select class="console-selector" id="coreSelect">
+-                                ${Object.entries(cores).map(([name, value]) => 
+-                                    `<option value="${value}">${name}</option>`
+-                                ).join('')}
+-                            </select>
+-                            <br><br>
+-                            <button id="loadBtn">Load Game</button>
+-                        </div>
+-                    `;
+-                    document.body.appendChild(modal);
+-
+-                    document.getElementById('loadBtn').onclick = () => {
+-                        const selected = document.getElementById('coreSelect').value;
+-                        logActivity('Console selected', { console: selected });
+-                        document.body.removeChild(modal);
+-                        resolve(selected);
+-                    };
+-                });
+-            })(ext);
+-
+-            logActivity('Emulator core selected', { core: core });
+-
+-            // Show game section
+-            document.getElementById('welcomeSection').style.display = 'none';
+-            document.getElementById('gameSection').style.display = 'block';
+-            document.getElementById('gameTitle').textContent = `Now Playing: ${fileName}`;
+-            document.getElementById('gameInfo').textContent = `Console: ${core.toUpperCase()} | Started: ${new Date().toLocaleString()}`;
+-
+-            // Initialize emulator
+-            window.EJS_player = "#game";
+-            window.EJS_gameName = fileName;
+-            window.EJS_biosUrl = "";
+-            window.EJS_gameUrl = url;
+-            window.EJS_core = core;
+-            window.EJS_pathtodata = "https://rawcdn.githack.com/EmulatorJS/EmulatorJS/main/data/";
+-            window.EJS_startOnLoaded = true;
+-
+-            const script = document.createElement("script");
+-            script.src = "https://rawcdn.githack.com/EmulatorJS/EmulatorJS/main/data/loader.js";
+-            script.onload = () => {
+-                logActivity('Emulator loaded successfully', { game: fileName, core: core });
+-            };
+-            document.body.appendChild(script);
+-        };
+ 
+-        // Download log
+-        document.getElementById('downloadLog').addEventListener('click', () => {
+-            const logData = {
+-                exportDate: new Date().toISOString(),
+-                totalActions: activityLog.length,
+-                sessionDuration: activityLog.length > 0 ? 
+-                    (new Date() - new Date(activityLog[0].timestamp)) / 1000 / 60 : 0,
+-                activities: activityLog
+-            };
+-
+-            const blob = new Blob([JSON.stringify(logData, null, 2)], { type: 'application/json' });
+-            const url = URL.createObjectURL(blob);
+-            const a = document.createElement('a');
+-            a.href = url;
+-            a.download = `webmulator_activity_${Date.now()}.savefile`;
+-            a.click();
+-            URL.revokeObjectURL(url);
+-            
+-            logActivity('Activity log downloaded');
+-        });
+-
+-        // New game
+-        document.getElementById('newGame').addEventListener('click', () => {
+-            logActivity('New game requested - page reload');
+-            location.reload();
+-        });
++            romPath.textContent = selectedFile.name;
++            const extension = selectedFile.name.includes('.')
++                ? selectedFile.name.split('.').pop().toLowerCase()
++                : '';
++            const suggestedSystem = extensionToSystem[extension];
+ 
+-        // Track mouse movements
+-        let lastMouseLog = 0;
+-        document.addEventListener('mousemove', (e) => {
+-            const now = Date.now();
+-            if (now - lastMouseLog > 5000) { // Log every 5 seconds
+-                logActivity('Mouse activity', { x: e.clientX, y: e.clientY });
+-                lastMouseLog = now;
++            if (suggestedSystem && systems[suggestedSystem]) {
++                systemSelect.value = suggestedSystem;
++                fillCoreOptions(suggestedSystem);
+             }
+         });
+ 
+-        // Track clicks
+-        document.addEventListener('click', (e) => {
+-            logActivity('Click event', { 
+-                element: e.target.tagName, 
+-                id: e.target.id || 'none',
+-                position: `${e.clientX},${e.clientY}`
+-            });
+-        });
++        startButton.addEventListener('click', () => {
++            if (!selectedFile) return;
+ 
+-        // Track visibility changes
+-        document.addEventListener('visibilitychange', () => {
+-            logActivity(document.hidden ? 'Tab hidden' : 'Tab visible');
+-        });
++            const selectedCore = coreSelect.value;
++            const url = URL.createObjectURL(selectedFile);
++            launcher.style.display = 'none';
+ 
+-        // Track window resize
+-        window.addEventListener('resize', () => {
+-            logActivity('Window resized', { 
+-                dimensions: `${window.innerWidth}x${window.innerHeight}` 
+-            });
+-        });
++            window.EJS_player = '#game';
++            window.EJS_gameName = selectedFile.name;
++            window.EJS_gameUrl = url;
++            window.EJS_core = selectedCore;
++            window.EJS_pathtodata = 'https://rawcdn.githack.com/EmulatorJS/EmulatorJS/main/data/';
++            window.EJS_startOnLoaded = true;
+ 
+-        // Track beforeunload
+-        window.addEventListener('beforeunload', () => {
+-            logActivity('User leaving page');
++            const script = document.createElement('script');
++            script.src = 'https://rawcdn.githack.com/EmulatorJS/EmulatorJS/main/data/loader.js';
++            document.body.appendChild(script);
+         });
++
++        fillSystemOptions();
+     </script>
+ </body>
+ </html>
+ 
+EOF
+)
